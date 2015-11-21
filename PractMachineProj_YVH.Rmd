@@ -1,0 +1,88 @@
+---
+title: "Practical Machine Learning Project"
+author: "YVH"
+date: "16 November 2015"
+output: html_document
+---
+
+
+#Intro 
+Using data from http://groupware.les.inf.puc-rio.br/har we try to build a model to predict the manner in which people did an excercise: Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)
+
+# Read in the data: test and training
+```{r,echo=TRUE, cache=TRUE}
+  url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  temp <- tempfile()
+  download.file(url,temp,method="curl")
+  TrainData <- read.csv(temp)
+  unlink(temp)
+
+  url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  temp <- tempfile()
+  download.file(url,temp,method="curl")
+  TestData <- read.csv(temp)
+  unlink(temp)
+
+  
+```
+
+# Preparation
+There are a lot of variables with hardly any data conataining lots of NA's. Let's remove those, together with the time stamps etc. I assume there is no time dependance. 
+```{r,echo=TRUE, cache=TRUE}
+library("dplyr")
+
+varNoNA <- names(TrainData[apply(TrainData, 2, function(x) !any(is.na(x)))])
+TrainDataPrep <- select(TrainData,one_of(varNoNA))
+varNoEmptyNoNA <- names(TrainDataPrep[apply(TrainDataPrep, 2, function(x) !any(x==""))])
+TrainDataPrep <- select(TrainData,one_of(varNoEmptyNoNA))
+notmeaningfull <- c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window","num_window")
+TrainDataPrep <- select(TrainDataPrep,-one_of(notmeaningfull))
+
+
+```
+There are a lot of variables. I will show one plot of a random picked variable:
+```{r fig.width=5, fig.height=4.3}
+    library(ggplot2)
+    qplot(roll_arm,colour=classe, data=TrainDataPrep,geom='density')
+
+```
+
+
+It turns out that this plot could be used to determine if the classe is equal to A. 
+
+
+# Model construction and training
+
+There are many variables. Instead of having a look at all of them I opt for a brute force method: gradient boosting machine or GBM; a boosted tree model with all the remaining variable as predictors. We use repeated 10 fold cross validation to tune our parameters and estimate our out-of-sample error/accuracy. In order to speed thing up I use multiple CPU cores. 
+
+
+
+```{r,echo=TRUE, cache=TRUE}
+  library(doMC)
+  library('caret')
+  registerDoMC(cores = 4)
+
+  set.seed(825)
+  fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated three times
+                           repeats = 10)
+                           
+  
+  gbmFit1 <- train(classe ~ ., data = TrainDataPrep,
+                 method = "gbm",
+                 trControl = fitControl, verbose = FALSE)
+
+       
+```
+
+# Result
+
+```{r,echo=TRUE, cache=TRUE}
+  gbmFit1
+```
+
+The final model has a misclasification out-of-sample error (equals 1 minus accuracy) of `r 1-tail(gbmFit1$results,1)$Accuracy` with a standard deviation of `r tail(gbmFit1$results,1)$AccuracySD`; this was estimated using 10 fold cross validation (repeated 10 times). 
+
+
